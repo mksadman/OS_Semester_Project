@@ -10,6 +10,7 @@
 #include <kern/thread/PTCBIntro/export.h>
 #include <kern/thread/PCurID/export.h>
 #include <kern/trap/TSyscallArg/export.h>
+#include <kern/flock/export.h>
 
 #include "dir.h"
 #include "path.h"
@@ -531,4 +532,64 @@ void sys_chdir(tf_t *tf)
     inode_put(tcb_get_cwd(pid));
     tcb_set_cwd(pid, ip);
     syscall_set_errno(tf, E_SUCC);
+}
+
+/**
+ * Implement flock() syscall
+ * int flock(int fd, int operation);
+ * 
+ * operation can be:
+ *   LOCK_SH (1) - Shared lock
+ *   LOCK_EX (2) - Exclusive lock
+ *   LOCK_UN (8) - Unlock
+ *   LOCK_NB (4) - Non-blocking (can be OR'd with above)
+ */
+void sys_flock(tf_t *tf)
+{
+    int fd, operation, result;
+    struct file *f;
+    int pid = get_curid();
+
+    fd = syscall_get_arg2(tf);
+    operation = syscall_get_arg3(tf);
+
+    // Validate fd range
+    if (!(0 <= fd && fd < NOFILE)) {
+        syscall_set_errno(tf, E_BADF);
+        syscall_set_retval1(tf, -1);
+        return;
+    }
+
+    // Get file from process's open files
+    f = tcb_get_openfiles(pid)[fd];
+    if (f == NULL || f->type != FD_INODE) {
+        syscall_set_errno(tf, E_BADF);
+        syscall_set_retval1(tf, -1);
+        return;
+    }
+
+    // Handle lock operation
+    switch (operation & ~LOCK_NB) {
+        case LOCK_SH:  
+            result = flock_acquire(f->ip, LOCK_SH, pid);
+            break;
+        case LOCK_EX:  
+            result = flock_acquire(f->ip, LOCK_EX, pid);
+            break;
+        case LOCK_UN:  
+            result = flock_release(f->ip, pid);
+            break;
+        default:
+            syscall_set_errno(tf, E_INVAL);
+            syscall_set_retval1(tf, -1);
+            return;
+    }
+
+    if (result == 0) {
+        syscall_set_errno(tf, E_SUCC);
+        syscall_set_retval1(tf, 0);
+    } else {
+        syscall_set_errno(tf, E_BADF); 
+        syscall_set_retval1(tf, -1);
+    }
 }

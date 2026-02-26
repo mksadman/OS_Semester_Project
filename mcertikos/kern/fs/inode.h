@@ -68,6 +68,7 @@
 #include "params.h"
 #include "stat.h"
 #include "dinode.h"
+#include <kern/lib/spinlock.h>
 
 // In-memory copy of an inode
 struct inode {
@@ -82,6 +83,10 @@ struct inode {
     int16_t nlink;
     uint32_t size;
     uint32_t addrs[NDIRECT + 1];
+
+    spinlock_t lock_spinlock;
+    int exclusive_lock_pid;
+    int shared_lock_count;
 };
 
 // Table mapping major device number to device functions

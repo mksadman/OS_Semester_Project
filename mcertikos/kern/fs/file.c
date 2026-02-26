@@ -31,6 +31,9 @@ struct file *file_alloc(void)
     for (f = ftable.file; f < ftable.file + NFILE; f++) {
         if (f->ref == 0) {
             f->ref = 1;
+            f->lock_type = 0;
+            f->pid = -1;
+            spinlock_init(&f->lock_spinlock);
             spinlock_release(&ftable.lock);
             return f;
         }
@@ -69,6 +72,8 @@ void file_close(struct file *f)
     ff = *f;
     f->ref = 0;
     f->type = FD_NONE;
+    f->lock_type = 0;
+    f->pid = -1;
     spinlock_release(&ftable.lock);
 
     if (ff.type == FD_INODE) {

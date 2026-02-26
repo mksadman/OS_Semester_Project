@@ -13,6 +13,7 @@
 #ifdef _KERN_
 
 #include "stat.h"
+#include <kern/lib/spinlock.h>
 #include "inode.h"
 
 struct file {
@@ -22,6 +23,10 @@ struct file {
     int8_t writable;
     struct inode *ip;
     uint32_t off;
+    int lock_type; // 0-NONE, 1-EXCLUSIVE, 2-SHARED
+    int pid;
+
+    spinlock_t lock_spinlock;
 };
 
 void file_init(void);

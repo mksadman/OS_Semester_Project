@@ -24,6 +24,12 @@ struct {
 void inode_init(void)
 {
     spinlock_init(&inode_cache.lock);
+
+    for(int i=0; i<NINODE; i++){
+        spinlock_init(&inode_cache.inode[i].lock_spinlock);
+        inode_cache.inode[i].exclusive_lock_pid = -1;
+        inode_cache.inode[i].shared_lock_count = 0;
+    }
 }
 
 struct inode *inode_get(uint32_t dev, uint32_t inum);
@@ -109,6 +115,8 @@ struct inode *inode_get(uint32_t dev, uint32_t inum)
     ip->inum = inum;
     ip->ref = 1;
     ip->flags = 0;
+    ip->exclusive_lock_pid = -1;
+    ip->shared_lock_count = 0;
     spinlock_release(&inode_cache.lock);
 
     return ip;

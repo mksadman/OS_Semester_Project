@@ -128,17 +128,21 @@ int flock_release(struct inode *ip, int pid)
 
     if (ip->exclusive_lock_pid == pid) {
         ip->exclusive_lock_pid = -1;
+        thread_wakeup(ip);
         spinlock_release(&ip->lock_spinlock);
         return 0;
     }
 
     if (ip->shared_lock_count > 0) {
         ip->shared_lock_count--;
+
+        if (ip->shared_lock_count==0){
+            thread_wakeup(ip);
+        }
+        
         spinlock_release(&ip->lock_spinlock);
         return 0;
     }
-
-    thread_wakeup(ip);
 
     spinlock_release(&ip->lock_spinlock);
     return -1;

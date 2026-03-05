@@ -94,6 +94,9 @@ void syscall_dispatch(tf_t *tf)
     case SYS_stat:
         sys_fstat(tf);
         break;
+    case SYS_flock:
+        sys_flock(tf);
+        break;
     default:
         syscall_set_errno(tf, E_INVAL_CALLNR);
     }

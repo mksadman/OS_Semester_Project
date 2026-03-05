@@ -35,6 +35,7 @@ include		$(KERN_DIR)/thread/Makefile.inc
 include		$(KERN_DIR)/proc/Makefile.inc
 include		$(KERN_DIR)/trap/Makefile.inc
 include		$(KERN_DIR)/fs/Makefile.inc
+include		$(KERN_DIR)/flock/Makefile.inc
 
 KERN_CFLAGS	+= $(KERN_DEBUG_FLAGS)
 KERN_CFLAGS	+= -DSERIAL_DEBUG -DDEBUG_MSG

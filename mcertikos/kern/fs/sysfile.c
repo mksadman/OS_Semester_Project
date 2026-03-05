@@ -580,7 +580,7 @@ void sys_flock(tf_t *tf)
             result = flock_release(f->ip, pid);
             break;
         default:
-            syscall_set_errno(tf, E_INVAL);
+            syscall_set_errno(tf, E_INVAL_ID);
             syscall_set_retval1(tf, -1);
             return;
     }

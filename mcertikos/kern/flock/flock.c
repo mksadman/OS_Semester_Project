@@ -99,7 +99,8 @@ int flock_acquire(struct inode *ip, int operation, int pid)
         spinlock_release(&ip->lock_spinlock);
         return 0;
 
-    } else if (lock_type == LOCK_SH) {
+    } 
+    else if (lock_type == LOCK_SH) {
         if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
 
             spinlock_release(&ip->lock_spinlock);
@@ -139,7 +140,7 @@ int flock_release(struct inode *ip, int pid)
         if (ip->shared_lock_count==0){
             thread_wakeup(ip);
         }
-        
+
         spinlock_release(&ip->lock_spinlock);
         return 0;
     }

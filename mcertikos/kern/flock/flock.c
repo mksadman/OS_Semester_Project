@@ -101,6 +101,8 @@ int flock_acquire(struct inode *ip, int operation, int pid)
 
     } 
     else if (lock_type == LOCK_SH) {
+    } 
+    else if (lock_type == LOCK_SH) {
         if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
 
             spinlock_release(&ip->lock_spinlock);

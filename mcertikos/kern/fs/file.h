@@ -23,7 +23,7 @@ struct file {
     int8_t writable;
     struct inode *ip;
     uint32_t off;
-    int lock_type; // 0-NONE, 1-EXCLUSIVE, 2-SHARED
+    int lock_type; // 0-NONE, LOCK_SH (1), LOCK_EX (2)
     int pid;
 
     spinlock_t lock_spinlock;

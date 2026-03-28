@@ -11,6 +11,7 @@
 #include "log.h"
 #include "block.h"
 #include "inode.h"
+#include <kern/flock/export.h>
 
 struct devsw *devsw;
 
@@ -29,6 +30,11 @@ void inode_init(void)
         spinlock_init(&inode_cache.inode[i].lock_spinlock);
         inode_cache.inode[i].exclusive_lock_pid = -1;
         inode_cache.inode[i].shared_lock_count = 0;
+        inode_cache.inode[i].waiting_readers = 0;
+        inode_cache.inode[i].waiting_writers = 0;
+        inode_cache.inode[i].flock_priority = FLOCK_PRIORITY_READER;
+        memset(inode_cache.inode[i].shared_lock_holders, 0,
+               sizeof(inode_cache.inode[i].shared_lock_holders));
     }
 }
 
@@ -117,6 +123,10 @@ struct inode *inode_get(uint32_t dev, uint32_t inum)
     ip->flags = 0;
     ip->exclusive_lock_pid = -1;
     ip->shared_lock_count = 0;
+    ip->waiting_readers = 0;
+    ip->waiting_writers = 0;
+    ip->flock_priority = FLOCK_PRIORITY_READER;
+    memset(ip->shared_lock_holders, 0, sizeof(ip->shared_lock_holders));
     spinlock_release(&inode_cache.lock);
 
     return ip;

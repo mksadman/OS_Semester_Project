@@ -54,6 +54,13 @@ struct file {
 #define O_RDWR   0x002
 #define O_CREATE 0x200
 
+#define LOCK_SH 1
+#define LOCK_EX 2
+#define LOCK_NB 4
+#define LOCK_UN 8
+#define LOCK_PRIO_READER 16
+#define LOCK_PRIO_WRITER 32
+
 #include <syscall.h>
 
 #define read(fd, str, n)  sys_read((fd), (str), (n))
@@ -65,5 +72,6 @@ struct file {
 #define open(path, omode) sys_open((path), (omode))
 #define mkdir(path)       sys_mkdir((path))
 #define chdir(path)       sys_chdir((path))
+#define flock(fd, op)     sys_flock((fd), (op))
 
 #endif  /* !_USER_FILE_H_ */

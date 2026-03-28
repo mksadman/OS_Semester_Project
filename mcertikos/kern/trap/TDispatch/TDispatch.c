@@ -73,9 +73,6 @@ void syscall_dispatch(tf_t *tf)
     case SYS_close:
         sys_close(tf);
         break;
-    case SYS_read:
-        sys_read(tf);
-        break;
     case SYS_write:
         sys_write(tf);
         break;
@@ -93,9 +90,6 @@ void syscall_dispatch(tf_t *tf)
         break;
     case SYS_stat:
         sys_fstat(tf);
-        break;
-    case SYS_flock:
-        sys_flock(tf);
         break;
     case SYS_flock:
         sys_flock(tf);

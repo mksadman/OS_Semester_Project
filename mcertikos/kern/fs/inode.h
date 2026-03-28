@@ -69,6 +69,7 @@
 #include "stat.h"
 #include "dinode.h"
 #include <kern/lib/spinlock.h>
+#include <kern/lib/x86.h>
 
 // In-memory copy of an inode
 struct inode {
@@ -87,6 +88,10 @@ struct inode {
     spinlock_t lock_spinlock;
     int exclusive_lock_pid;
     int shared_lock_count;
+    int waiting_readers;
+    int waiting_writers;
+    int flock_priority;
+    int shared_lock_holders[NUM_IDS];
 };
 
 // Table mapping major device number to device functions

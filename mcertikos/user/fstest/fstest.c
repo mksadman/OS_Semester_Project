@@ -696,6 +696,233 @@ void bigdir(void)
     printf("=====bigdir ok=====\n\n");
 }
 
+#define ELF_PING 1
+#define ELF_PONG 2
+#define ELF_DING 3
+
+static void unlink_if_exists(char *path)
+{
+    unlink(path);
+}
+
+static int file_exists(char *path)
+{
+    int fd;
+
+    fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return 0;
+    }
+
+    close(fd);
+    return 1;
+}
+
+static int wait_for_file(char *path, int max_yields)
+{
+    int i;
+
+    for (i = 0; i < max_yields; i++) {
+        if (file_exists(path)) {
+            return 1;
+        }
+        yield();
+    }
+
+    return 0;
+}
+
+void flock_basic(void)
+{
+    int fd;
+    int tries;
+
+    printf("=====flock basic test (shared resource)=====\n");
+
+    unlink_if_exists("flock.shared.lock");
+    unlink_if_exists("flock.shared.holding");
+    unlink_if_exists("flock.shared.done");
+
+    close(open("flock.shared.lock", O_CREATE | O_RDWR));
+
+    if (spawn(ELF_PING, 1000) < 0) {
+        printf("flock: spawn holder failed\n");
+        exit();
+    }
+
+    if (!wait_for_file("flock.shared.holding", 4000)) {
+        printf("flock: holder did not start\n");
+        exit();
+    }
+
+    fd = open("flock.shared.lock", O_RDWR);
+    if (fd < 0) {
+        printf("flock: open lock file failed\n");
+        exit();
+    }
+
+    tries = 0;
+    while (flock(fd, LOCK_EX | LOCK_NB) < 0) {
+        tries++;
+        if (tries > 20000) {
+            printf("flock: bounded waiting/progress failed\n");
+            close(fd);
+            exit();
+        }
+        yield();
+    }
+
+    if (tries == 0) {
+        printf("flock: mutual exclusion violation (acquired too early)\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    if (flock(fd, LOCK_UN) < 0) {
+        printf("flock: unlock after acquisition failed\n");
+        close(fd);
+        exit();
+    }
+
+    close(fd);
+
+    if (!wait_for_file("flock.shared.done", 8000)) {
+        printf("flock: holder did not complete\n");
+        exit();
+    }
+
+    unlink_if_exists("flock.shared.lock");
+    unlink_if_exists("flock.shared.holding");
+    unlink_if_exists("flock.shared.done");
+
+    printf("=====flock basic test ok=====\n\n");
+}
+
+void flock_priority_flags(void)
+{
+    int fd;
+    int i;
+
+    printf("=====flock priority flags test=====\n");
+
+    unlink_if_exists("flock.prio.lock");
+    unlink_if_exists("flock.writer.acquired");
+    unlink_if_exists("flock.reader.success");
+    unlink_if_exists("flock.reader.fail");
+
+    fd = open("flock.prio.lock", O_CREATE | O_RDWR);
+    if (fd < 0) {
+        printf("flock: create flock.prio.lock failed\n");
+        exit();
+    }
+
+    if (flock(fd, LOCK_SH | LOCK_PRIO_WRITER) < 0) {
+        printf("flock: writer-priority setup failed\n");
+        close(fd);
+        exit();
+    }
+
+    if (spawn(ELF_PONG, 1000) < 0) {
+        printf("flock: spawn writer waiter failed\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    for (i = 0; i < 500; i++) {
+        yield();
+    }
+
+    if (spawn(ELF_DING, 1000) < 0) {
+        printf("flock: spawn reader probe failed\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    if (!wait_for_file("flock.reader.fail", 4000)) {
+        printf("flock: writer-priority check failed\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    if (flock(fd, LOCK_UN) < 0) {
+        printf("flock: unlock writer-priority setup failed\n");
+        close(fd);
+        exit();
+    }
+
+    close(fd);
+
+    if (!wait_for_file("flock.writer.acquired", 8000)) {
+        printf("flock: writer did not progress (writer mode)\n");
+        exit();
+    }
+
+    unlink_if_exists("flock.writer.acquired");
+    unlink_if_exists("flock.reader.success");
+    unlink_if_exists("flock.reader.fail");
+
+    fd = open("flock.prio.lock", O_RDWR);
+    if (fd < 0) {
+        printf("flock: reopen flock.prio.lock failed\n");
+        exit();
+    }
+
+    if (flock(fd, LOCK_SH | LOCK_PRIO_READER) < 0) {
+        printf("flock: reader-priority setup failed\n");
+        close(fd);
+        exit();
+    }
+
+    if (spawn(ELF_PONG, 1000) < 0) {
+        printf("flock: spawn writer waiter failed (reader mode)\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    for (i = 0; i < 500; i++) {
+        yield();
+    }
+
+    if (spawn(ELF_DING, 1000) < 0) {
+        printf("flock: spawn reader probe failed (reader mode)\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    if (!wait_for_file("flock.reader.success", 4000)) {
+        printf("flock: reader-priority check failed\n");
+        flock(fd, LOCK_UN);
+        close(fd);
+        exit();
+    }
+
+    if (flock(fd, LOCK_UN) < 0) {
+        printf("flock: unlock reader-priority setup failed\n");
+        close(fd);
+        exit();
+    }
+
+    close(fd);
+
+    if (!wait_for_file("flock.writer.acquired", 8000)) {
+        printf("flock: writer did not progress (reader mode)\n");
+        exit();
+    }
+
+    unlink_if_exists("flock.prio.lock");
+    unlink_if_exists("flock.writer.acquired");
+    unlink_if_exists("flock.reader.success");
+    unlink_if_exists("flock.reader.fail");
+
+    printf("=====flock priority flags test ok=====\n\n");
+}
+
 int main(int argc, char *argv[])
 {
     printf("*******usertests starting*******\n\n");
@@ -723,6 +950,8 @@ int main(int argc, char *argv[])
     dirfile();
     iref();
     bigdir();  // slow
+    flock_basic();
+    flock_priority_flags();
     printf("*******end of tests*******\n");
     return 0;
 }

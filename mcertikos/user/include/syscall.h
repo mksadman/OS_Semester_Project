@@ -159,6 +159,7 @@ static gcc_inline int sys_unlink(char *path)
     return errno ? -1 : 0;
 }
 
+
 static gcc_inline int sys_open(char *path, int omode)
 {
     int errno;
@@ -207,6 +208,22 @@ static gcc_inline int sys_chdir(char *path)
                   : "cc", "memory");
 
     return errno ? -1 : 0;
+}
+
+static gcc_inline int sys_flock(int fd, int operation)
+{
+    int errno;
+    int ret;
+
+    asm volatile ("int %2"
+                  : "=a" (errno), "=b" (ret)
+                  : "i" (T_SYSCALL),
+                    "a" (SYS_flock),
+                    "b" (fd),
+                    "c" (operation)
+                  : "cc", "memory");
+
+    return errno ? -1 : ret;
 }
 
 #endif  /* !_USER_SYSCALL_H_ */

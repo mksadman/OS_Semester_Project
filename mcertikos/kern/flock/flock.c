@@ -4,23 +4,49 @@
 #include "import.h"
 #include "export.h"
 
-/**
- * Internal helper: check conflict without acquiring spinlock
- * Caller must already hold ip->lock_spinlock
- */
+static int valid_pid(int pid)
+{
+    return 0 <= pid && pid < NUM_IDS;
+}
+
+static void update_priority_locked(struct inode *ip, int operation)
+{
+    if (operation & LOCK_PRIO_WRITER) {
+        ip->flock_priority = FLOCK_PRIORITY_WRITER;
+    } else if (operation & LOCK_PRIO_READER) {
+        ip->flock_priority = FLOCK_PRIORITY_READER;
+    }
+}
+
 static int has_conflict_locked(struct inode *ip, int lock_type, int pid)
 {
     if (lock_type == LOCK_EX) {
-        if ((ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) ||
-            ip->shared_lock_count > 0) {
-            return 1;
-        }
-    } else if (lock_type == LOCK_SH) {
         if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
             return 1;
         }
+
+        if (ip->shared_lock_count > ip->shared_lock_holders[pid]) {
+            return 1;
+        }
+
+        return 0;
     }
-    return 0;
+
+    if (lock_type == LOCK_SH) {
+        if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
+            return 1;
+        }
+
+        if (ip->flock_priority == FLOCK_PRIORITY_WRITER
+            && ip->waiting_writers > 0
+            && ip->shared_lock_holders[pid] == 0) {
+            return 1;
+        }
+
+        return 0;
+    }
+
+    return 1;
 }
 
 /**
@@ -29,34 +55,24 @@ static int has_conflict_locked(struct inode *ip, int lock_type, int pid)
  */
 int flock_check_conflict(struct inode *ip, int operation, int pid)
 {
-    if (!ip)
+    int conflict;
+    int lock_type;
+
+    if (!ip || !valid_pid(pid))
         return 1;
 
-    int lock_type = operation & ~LOCK_NB;  // remove non-blocking flag
+    lock_type = operation & LOCK_MODE_MASK;
+
+    if (lock_type != LOCK_SH && lock_type != LOCK_EX) {
+        return 1;
+    }
 
     spinlock_acquire(&ip->lock_spinlock);
 
-    if (lock_type == LOCK_EX) {
-
-        if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
-            spinlock_release(&ip->lock_spinlock);
-            return 1;  
-        }
-        if (ip->shared_lock_count > 0) {
-            spinlock_release(&ip->lock_spinlock);
-            return 1;  
-        }
-    } 
-    else if (lock_type == LOCK_SH) {
-
-        if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
-            spinlock_release(&ip->lock_spinlock);
-            return 1; 
-        }
-    }
+    conflict = has_conflict_locked(ip, lock_type, pid);
 
     spinlock_release(&ip->lock_spinlock);
-    return 0;  // no conflict
+    return conflict;
 }
 
 /**
@@ -65,57 +81,69 @@ int flock_check_conflict(struct inode *ip, int operation, int pid)
  */
 int flock_acquire(struct inode *ip, int operation, int pid)
 {
-    if (!ip || pid < 0)
+    int lock_type;
+
+    if (!ip || !valid_pid(pid))
         return -1;
 
-    int lock_type = operation & ~LOCK_NB;  // remove non-blocking flag
+    lock_type = operation & LOCK_MODE_MASK;
 
     if (lock_type != LOCK_SH && lock_type != LOCK_EX)
         return -1;
 
     spinlock_acquire(&ip->lock_spinlock);
 
+    update_priority_locked(ip, operation);
+
+    if (lock_type == LOCK_EX) {
+        ip->waiting_writers++;
+    } else {
+        ip->waiting_readers++;
+    }
+
     while (has_conflict_locked(ip, lock_type, pid)) {
         if (operation & LOCK_NB) {
+            if (lock_type == LOCK_EX) {
+                ip->waiting_writers--;
+            } else {
+                ip->waiting_readers--;
+            }
             spinlock_release(&ip->lock_spinlock);
             return -1;
-        } 
-        else {
-            thread_sleep(ip, &ip->lock_spinlock);
         }
+
+        thread_sleep(ip, &ip->lock_spinlock);
     }
 
     if (lock_type == LOCK_EX) {
-        if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
+        ip->waiting_writers--;
+    } else {
+        ip->waiting_readers--;
+    }
+
+    if (lock_type == LOCK_EX) {
+        if (ip->exclusive_lock_pid == pid) {
             spinlock_release(&ip->lock_spinlock);
-            return -1;
-        }
-        if (ip->shared_lock_count > 0) {
-            spinlock_release(&ip->lock_spinlock);
-            return -1;
+            return 0;
         }
 
+        ip->shared_lock_count -= ip->shared_lock_holders[pid];
+        ip->shared_lock_holders[pid] = 0;
         ip->exclusive_lock_pid = pid;
-        spinlock_release(&ip->lock_spinlock);
-        return 0;
-
-    } 
-    else if (lock_type == LOCK_SH) {
-    } 
-    else if (lock_type == LOCK_SH) {
-        if (ip->exclusive_lock_pid != -1 && ip->exclusive_lock_pid != pid) {
-
-            spinlock_release(&ip->lock_spinlock);
-            return -1;
-        }
-
-        ip->shared_lock_count++;
         spinlock_release(&ip->lock_spinlock);
         return 0;
     }
 
+    if (ip->exclusive_lock_pid == pid) {
+        spinlock_release(&ip->lock_spinlock);
+        return 0;
+    }
+
+    ip->shared_lock_count++;
+    ip->shared_lock_holders[pid]++;
+
     spinlock_release(&ip->lock_spinlock);
-    return -1;
+    return 0;
 }
 
 /**
@@ -124,25 +152,26 @@ int flock_acquire(struct inode *ip, int operation, int pid)
  */
 int flock_release(struct inode *ip, int pid)
 {
-    if (!ip || pid < 0)
+    int released = 0;
+
+    if (!ip || !valid_pid(pid))
         return -1;
 
     spinlock_acquire(&ip->lock_spinlock);
 
     if (ip->exclusive_lock_pid == pid) {
         ip->exclusive_lock_pid = -1;
-        thread_wakeup(ip);
-        spinlock_release(&ip->lock_spinlock);
-        return 0;
+        released = 1;
     }
 
-    if (ip->shared_lock_count > 0) {
+    while (ip->shared_lock_holders[pid] > 0) {
+        ip->shared_lock_holders[pid]--;
         ip->shared_lock_count--;
+        released = 1;
+    }
 
-        if (ip->shared_lock_count==0){
-            thread_wakeup(ip);
-        }
-
+    if (released) {
+        thread_wakeup(ip);
         spinlock_release(&ip->lock_spinlock);
         return 0;
     }

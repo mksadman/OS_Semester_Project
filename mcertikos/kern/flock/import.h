@@ -6,6 +6,7 @@
 #include <kern/lib/spinlock.h>
 #include <kern/fs/inode.h>
 #include <kern/thread/PCurID/export.h>
+#include <kern/thread/PThread/export.h>
 
 #endif
 #endif

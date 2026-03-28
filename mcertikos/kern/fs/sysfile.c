@@ -569,12 +569,12 @@ void sys_flock(tf_t *tf)
     }
 
     // Handle lock operation
-    switch (operation & ~LOCK_NB) {
+    switch (operation & LOCK_MODE_MASK) {
         case LOCK_SH:  
-            result = flock_acquire(f->ip, LOCK_SH, pid);
+            result = flock_acquire(f->ip, operation, pid);
             break;
         case LOCK_EX:  
-            result = flock_acquire(f->ip, LOCK_EX, pid);
+            result = flock_acquire(f->ip, operation, pid);
             break;
         case LOCK_UN:  
             result = flock_release(f->ip, pid);
@@ -589,7 +589,7 @@ void sys_flock(tf_t *tf)
         syscall_set_errno(tf, E_SUCC);
         syscall_set_retval1(tf, 0);
     } else {
-        syscall_set_errno(tf, E_BADF); 
+        syscall_set_errno(tf, E_DISK_OP);
         syscall_set_retval1(tf, -1);
     }
 }
